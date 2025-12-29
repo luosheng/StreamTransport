@@ -8,7 +8,7 @@ public actor ProcessTransport: Transport {
 
   private let command: String
   private let arguments: [String]
-  private let logger: Logger
+  private let logger: Logger?
 
   private var process: Process?
   private var stdinPipe: Pipe?
@@ -37,7 +37,7 @@ public actor ProcessTransport: Transport {
   public init(command: String, arguments: [String] = [], logger: Logger? = nil) {
     self.command = command
     self.arguments = arguments
-    self.logger = logger ?? Logger(label: "jsonrpc-proxy.process")
+    self.logger = logger
   }
 
   public func start() async throws {
@@ -66,7 +66,7 @@ public actor ProcessTransport: Transport {
     do {
       try process.run()
       isRunning = true
-      logger.info("Started process: \(command) \(arguments.joined(separator: " "))")
+      logger?.info("Started process: \(command) \(arguments.joined(separator: " "))")
 
       // Start reading from stdout
       startReading()
@@ -95,7 +95,7 @@ public actor ProcessTransport: Transport {
     stderrPipe = nil
 
     messagesContinuation?.finish()
-    logger.info("Process transport stopped")
+    logger?.info("Process transport stopped")
   }
 
   public func send(_ data: Data) async throws {
@@ -107,7 +107,7 @@ public actor ProcessTransport: Transport {
 
     do {
       try stdinPipe.fileHandleForWriting.write(contentsOf: framedData)
-      logger.debug("Sent \(data.count) bytes to process stdin")
+      logger?.debug("Sent \(data.count) bytes to process stdin")
     } catch {
       throw TransportError.sendFailed(
         "Failed to write to process stdin: \(error.localizedDescription)")
@@ -183,7 +183,7 @@ public actor ProcessTransport: Transport {
 
   private func yieldMessage(_ data: Data) {
     messagesContinuation?.yield(data)
-    logger.debug("Received \(data.count) bytes from process stdout")
+    logger?.debug("Received \(data.count) bytes from process stdout")
   }
 
   private func finishMessages() {
@@ -191,6 +191,6 @@ public actor ProcessTransport: Transport {
   }
 
   private func logError(_ message: String) {
-    logger.error("\(message)")
+    logger?.error("\(message)")
   }
 }

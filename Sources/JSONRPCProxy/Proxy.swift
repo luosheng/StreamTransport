@@ -37,7 +37,7 @@ public enum TransportType: Sendable {
 public actor Proxy {
   private let inbound: any Transport
   private let outbound: any Transport
-  private let logger: Logger
+  private let logger: Logger?
 
   private var forwardTask: Task<Void, Never>?
   private var responseTask: Task<Void, Never>?
@@ -52,7 +52,7 @@ public actor Proxy {
   public init(inbound: any Transport, outbound: any Transport, logger: Logger? = nil) {
     self.inbound = inbound
     self.outbound = outbound
-    self.logger = logger ?? Logger(label: "jsonrpc-proxy")
+    self.logger = logger
   }
 
   /// Initialize a proxy with transport types and configuration
@@ -63,7 +63,7 @@ public actor Proxy {
   public init(inboundType: TransportType, outboundType: TransportType, logger: Logger? = nil) {
     self.inbound = Self.createTransport(type: inboundType, mode: .server, logger: logger)
     self.outbound = Self.createTransport(type: outboundType, mode: .client, logger: logger)
-    self.logger = logger ?? Logger(label: "jsonrpc-proxy")
+    self.logger = logger
   }
 
   /// Initialize a proxy from configuration
@@ -74,14 +74,14 @@ public actor Proxy {
     self.inbound = Self.createTransport(type: configuration.inbound, mode: .server, logger: logger)
     self.outbound = Self.createTransport(
       type: configuration.outbound, mode: .client, logger: logger)
-    self.logger = logger ?? Logger(label: "jsonrpc-proxy")
+    self.logger = logger
   }
 
   /// Start the proxy
   public func start() async throws {
     guard !isRunning else { return }
 
-    logger.info("Starting JSON-RPC Proxy...")
+    logger?.info("Starting JSON-RPC Proxy...")
 
     // Start both transports
     try await inbound.start()
@@ -92,14 +92,14 @@ public actor Proxy {
     // Start forwarding messages
     startMessageForwarding()
 
-    logger.info("JSON-RPC Proxy started")
+    logger?.info("JSON-RPC Proxy started")
   }
 
   /// Stop the proxy
   public func stop() async throws {
     guard isRunning else { return }
 
-    logger.info("Stopping JSON-RPC Proxy...")
+    logger?.info("Stopping JSON-RPC Proxy...")
 
     forwardTask?.cancel()
     responseTask?.cancel()
@@ -111,7 +111,7 @@ public actor Proxy {
 
     isRunning = false
 
-    logger.info("JSON-RPC Proxy stopped")
+    logger?.info("JSON-RPC Proxy stopped")
   }
 
   /// Run the proxy until cancelled
@@ -144,10 +144,10 @@ public actor Proxy {
     forwardTask = Task {
       for await message in await inbound.messages {
         do {
-          logger.debug("Forwarding request: \(message.count) bytes")
+          logger?.debug("Forwarding request: \(message.count) bytes")
           try await outbound.send(message)
         } catch {
-          logger.error("Failed to forward request: \(error)")
+          logger?.error("Failed to forward request: \(error)")
         }
       }
     }
@@ -156,10 +156,10 @@ public actor Proxy {
     responseTask = Task {
       for await message in await outbound.messages {
         do {
-          logger.debug("Forwarding response: \(message.count) bytes")
+          logger?.debug("Forwarding response: \(message.count) bytes")
           try await inbound.send(message)
         } catch {
-          logger.error("Failed to forward response: \(error)")
+          logger?.error("Failed to forward response: \(error)")
         }
       }
     }

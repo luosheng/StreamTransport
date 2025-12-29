@@ -6,7 +6,7 @@ public actor StdioTransport: Transport {
   public let mode: TransportMode
   public private(set) var isRunning: Bool = false
 
-  private let logger: Logger
+  private let logger: Logger?
   private var messagesContinuation: AsyncStream<Data>.Continuation?
   private var _messages: AsyncStream<Data>?
   private var readTask: Task<Void, Never>?
@@ -25,7 +25,7 @@ public actor StdioTransport: Transport {
   /// - Parameter mode: .server reads from stdin, .client writes to stdout
   public init(mode: TransportMode = .server, logger: Logger? = nil) {
     self.mode = mode
-    self.logger = logger ?? Logger(label: "jsonrpc-proxy.stdio")
+    self.logger = logger
   }
 
   public func start() async throws {
@@ -34,7 +34,7 @@ public actor StdioTransport: Transport {
     }
 
     isRunning = true
-    logger.info("StdioTransport started in \(mode) mode")
+    logger?.info("StdioTransport started in \(mode) mode")
 
     if mode == .server {
       // Initialize the messages stream if not already done
@@ -50,7 +50,7 @@ public actor StdioTransport: Transport {
     readTask?.cancel()
     readTask = nil
     messagesContinuation?.finish()
-    logger.info("StdioTransport stopped")
+    logger?.info("StdioTransport stopped")
   }
 
   public func send(_ data: Data) async throws {
@@ -70,7 +70,7 @@ public actor StdioTransport: Transport {
       fflush(stdout)
     }
 
-    logger.debug("Sent \(data.count) bytes via stdout")
+    logger?.debug("Sent \(data.count) bytes via stdout")
   }
 
   // MARK: - Private
@@ -96,13 +96,13 @@ public actor StdioTransport: Transport {
         // Try to parse complete messages
         while let message = extractMessage(from: &buffer) {
           messagesContinuation?.yield(message)
-          logger.debug("Received \(message.count) bytes via stdin")
+          logger?.debug("Received \(message.count) bytes via stdin")
         }
       } else if feof(stdin) != 0 {
-        logger.info("stdin closed (EOF)")
+        logger?.info("stdin closed (EOF)")
         break
       } else if ferror(stdin) != 0 {
-        logger.error("Error reading from stdin")
+        logger?.error("Error reading from stdin")
         break
       }
 
