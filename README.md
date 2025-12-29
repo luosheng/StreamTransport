@@ -20,9 +20,27 @@ dependencies: [
 ]
 ```
 
-## 使用方法
+## 示例：OpenCode ACP Proxy
 
-### 基本使用
+这个 package 包含一个示例可执行程序 `opencode-proxy`，它将 stdin 转发到 `opencode acp` 命令：
+
+```bash
+# 构建
+swift build
+
+# 运行
+.build/debug/opencode-proxy
+```
+
+```swift
+// Sources/OpenCodeProxy/main.swift
+import JSONRPCProxy
+
+let inbound = StdioTransport(mode: .server)
+let outbound = ProcessTransport(command: "opencode", arguments: ["acp"])
+let proxy = Proxy(inbound: inbound, outbound: outbound)
+try await proxy.run()
+```
 
 ```swift
 import JSONRPCProxy
