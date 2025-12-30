@@ -63,10 +63,18 @@ public actor ProcessTransport: Transport {
     self.stdoutPipe = stdoutPipe
     self.stderrPipe = stderrPipe
 
+    process.terminationHandler = { [weak self] process in
+      Task { [weak self] in
+        await self?.handleTermination(process)
+      }
+    }
+
     do {
       try process.run()
       isRunning = true
-      logger?.info("Started process: \(command) \(arguments.joined(separator: " "))")
+      logger?.info(
+        "Started process: \(command) \(arguments.joined(separator: " ")) (PID: \(process.processIdentifier))"
+      )
 
       // Start reading from stdout
       startReading()
@@ -86,6 +94,7 @@ public actor ProcessTransport: Transport {
     readTask?.cancel()
     readTask = nil
 
+    process?.terminationHandler = nil
     process?.terminate()
     process?.waitUntilExit()
     process = nil
@@ -103,6 +112,8 @@ public actor ProcessTransport: Transport {
       throw TransportError.notStarted
     }
 
+    logger?.debug("Sending \(data.count) bytes to process stdin...")
+
     // Write raw bytes to process stdin
     do {
       try stdinPipe.fileHandleForWriting.write(contentsOf: data)
@@ -113,14 +124,19 @@ public actor ProcessTransport: Transport {
     }
   }
 
+  private func handleTermination(_ process: Process) {
+    logger?.info("Process exited with code: \(process.terminationStatus)")
+    isRunning = false
+    messagesContinuation?.finish()
+  }
+
   // MARK: - Private
 
   private func startReading() {
-    guard let stdoutPipe = stdoutPipe else { return }
+    guard let stdoutPipe = stdoutPipe, let continuation = messagesContinuation else { return }
+    let logger = self.logger
 
-    readTask = Task { [weak self] in
-      guard let self else { return }
-
+    readTask = Task.detached {
       let fileHandle = stdoutPipe.fileHandleForReading
 
       while !Task.isCancelled {
@@ -131,17 +147,19 @@ public actor ProcessTransport: Transport {
           break
         }
 
-        await self.yieldMessage(chunk)
+        continuation.yield(chunk)
+        logger?.debug("Received \(chunk.count) bytes from process stdout")
       }
 
-      await self.finishMessages()
+      continuation.finish()
     }
   }
 
   private func startReadingStderr() {
     guard let stderrPipe = stderrPipe else { return }
+    let logger = self.logger
 
-    Task {
+    Task.detached {
       let fileHandle = stderrPipe.fileHandleForReading
 
       while !Task.isCancelled {
@@ -156,18 +174,11 @@ public actor ProcessTransport: Transport {
 
         // Also log if logger is available
         if let text = String(data: chunk, encoding: .utf8) {
-          logger?.debug("Process stderr: \(text)")
+          logger?.error("Process stderr: \(text)")
+        } else {
+          logger?.error("Process stderr: <binary data: \(chunk.count) bytes>")
         }
       }
     }
-  }
-
-  private func yieldMessage(_ data: Data) {
-    messagesContinuation?.yield(data)
-    logger?.debug("Received \(data.count) bytes from process stdout")
-  }
-
-  private func finishMessages() {
-    messagesContinuation?.finish()
   }
 }

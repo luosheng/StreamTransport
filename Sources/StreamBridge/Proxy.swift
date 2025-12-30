@@ -127,6 +127,20 @@ public actor Proxy {
     }
   }
 
+  /// Bridge two transports and run until cancelled
+  /// - Parameters:
+  ///   - source: Source transport
+  ///   - destination: Destination transport
+  ///   - logger: Optional logger
+  public static func bridge(
+    from source: any Transport,
+    to destination: any Transport,
+    logger: Logger? = nil
+  ) async throws {
+    let proxy = Proxy(inbound: source, outbound: destination, logger: logger)
+    try await proxy.run()
+  }
+
   // MARK: - Private
 
   private static func createTransport(type: TransportType, mode: TransportMode, logger: Logger?)
