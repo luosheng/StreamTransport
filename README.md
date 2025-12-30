@@ -7,7 +7,7 @@ A Swift package for bridging between different transport mechanisms. Stream data
 | Transport | Server Mode | Client Mode |
 |-----------|-------------|-------------|
 | **Stdio** | Reads from stdin | Writes to stdout |
-| **HTTP** | HTTP server | HTTP client |
+| **HTTP** | `/in` (POST) receives data, `/out` (GET) streams data | HTTP client |
 | **WebSocket** | WebSocket server | WebSocket client |
 | **Process** | — | Subprocess stdin/stdout |
 
@@ -62,20 +62,20 @@ try await bridge.run()
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                       Bridge                             │
-│                                                          │
-│  ┌──────────────────┐       ┌──────────────────┐        │
-│  │     Inbound      │       │    Outbound      │        │
-│  │   (Server Mode)  │ ───▶  │  (Client Mode)   │        │
-│  │                  │       │                  │        │
-│  │  - StdioTransport│       │  - StdioTransport│        │
-│  │  - HTTPTransport │       │  - HTTPTransport │        │
-│  │  - WebSocketTransport│   │  - WebSocketTransport │   │
-│  │                  │       │  - ProcessTransport   │   │
-│  └──────────────────┘       └──────────────────┘        │
-│                                                          │
-└─────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────┐
+│                             Bridge                                │
+│                                                                   │
+│ ┌──────────────────────────┐         ┌──────────────────────────┐ │
+│ │         Inbound          │         │         Outbound         │ │
+│ │      (Server Mode)       │  ────▶ │      (Client Mode)       │ │
+│ │                          │         │                          │ │
+│ │  - StdioTransport        │         │  - StdioTransport        │ │
+│ │  - HTTPTransport         │         │  - HTTPTransport         │ │
+│ │  - WebSocketTransport    │         │  - WebSocketTransport    │ │
+│ │                          │         │  - ProcessTransport      │ │
+│ └──────────────────────────┘         └──────────────────────────┘ │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
 ## Transport Protocol

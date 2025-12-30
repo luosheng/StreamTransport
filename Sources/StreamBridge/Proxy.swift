@@ -19,10 +19,13 @@ public enum TransportType: Sendable {
   case webSocket(WebSocketTransportConfiguration)
 
   /// Create default HTTP configuration
-  public static func http(host: String = "127.0.0.1", port: Int = 8080, path: String = "/")
-    -> TransportType
-  {
-    .http(HTTPTransportConfiguration(host: host, port: port, path: path))
+  public static func http(
+    host: String = "127.0.0.1",
+    port: Int = 8080,
+    inPath: String = "/in",
+    outPath: String = "/out"
+  ) -> TransportType {
+    .http(HTTPTransportConfiguration(host: host, port: port, inPath: inPath, outPath: outPath))
   }
 
   /// Create default WebSocket configuration
