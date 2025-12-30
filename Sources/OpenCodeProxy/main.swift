@@ -10,10 +10,26 @@ import StreamBridge
 @main
 struct OpenCodeProxy {
   static let enableLogging = ProcessInfo.processInfo.environment["DEBUG"] != nil
+  static let logFileURL: URL? = {
+    guard enableLogging else { return nil }
+    let path =
+      ProcessInfo.processInfo.environment["DEBUG_LOG"]
+      ?? NSHomeDirectory() + "/opencode-proxy.log"
+    return URL(fileURLWithPath: path)
+  }()
+  static let logHandle: FileHandle? = {
+    guard let url = logFileURL else { return nil }
+    FileManager.default.createFile(atPath: url.path, contents: nil)
+    return try? FileHandle(forWritingTo: url)
+  }()
 
   static func log(_ message: String) {
-    if enableLogging {
-      fputs("[proxy] \(message)\n", stderr)
+    guard enableLogging, let handle = logHandle else { return }
+    let timestamp = ISO8601DateFormatter().string(from: Date())
+    let line = "[\(timestamp)] \(message)\n"
+    if let data = line.data(using: .utf8) {
+      try? handle.seekToEnd()
+      try? handle.write(contentsOf: data)
     }
   }
 
@@ -52,7 +68,11 @@ struct OpenCodeProxy {
           try? outputHandle.close()
           break
         }
-        Self.log("stdin received \(data.count) bytes")
+        if let text = String(data: data, encoding: .utf8) {
+          Self.log(">>> stdin (\(data.count) bytes):\n\(text)")
+        } else {
+          Self.log(">>> stdin (\(data.count) bytes): <binary>")
+        }
         try? outputHandle.write(contentsOf: data)
       }
     }
@@ -67,7 +87,11 @@ struct OpenCodeProxy {
           Self.log("subprocess stdout EOF")
           break
         }
-        Self.log("subprocess stdout: \(data.count) bytes")
+        if let text = String(data: data, encoding: .utf8) {
+          Self.log("<<< stdout (\(data.count) bytes):\n\(text)")
+        } else {
+          Self.log("<<< stdout (\(data.count) bytes): <binary>")
+        }
         FileHandle.standardOutput.write(data)
       }
     }
