@@ -35,8 +35,7 @@ public struct URLSessionHTTPClientConfiguration: Sendable {
 /// This transport connects to an HTTP server and:
 /// - POSTs data to the `/in` endpoint
 /// - Streams responses from the `/out` endpoint
-public actor URLSessionHTTPClientTransport: Transport {
-  public let mode: TransportMode = .client
+public actor URLSessionHTTPClientTransport: ClientTransport {
   public private(set) var isRunning: Bool = false
 
   private let config: URLSessionHTTPClientConfiguration

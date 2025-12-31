@@ -1,6 +1,8 @@
 import Foundation
 import Logging
 import StreamProxy
+import StreamTransportClient
+import StreamTransportServer
 
 /// OpenCode ACP Proxy
 ///
@@ -23,7 +25,7 @@ struct OpenCodeProxy {
     logger.info("Starting OpenCode ACP Proxy...")
 
     // Create transports
-    let httpTransport = HTTPTransport(mode: .server, config: httpConfig, logger: logger)
+    let httpTransport = HTTPTransport(config: httpConfig, logger: logger)
     let processTransport = ProcessTransport(
       command: "opencode",
       arguments: ["acp"],

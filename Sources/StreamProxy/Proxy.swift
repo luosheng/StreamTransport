@@ -1,32 +1,47 @@
 import Foundation
 import Logging
+import StreamTransportClient
+import StreamTransportCore
 import StreamTransportServer
 
 /// Configuration for the Stream Bridge
 public struct ProxyConfiguration: Sendable {
-  public let inbound: TransportType
-  public let outbound: TransportType
+  public let inbound: ServerTransportType
+  public let outbound: ClientTransportType
 
-  public init(inbound: TransportType, outbound: TransportType) {
+  public init(inbound: ServerTransportType, outbound: ClientTransportType) {
     self.inbound = inbound
     self.outbound = outbound
   }
 }
 
-/// Type of transport with associated configuration
-public enum TransportType: Sendable {
+/// Server transport types (for inbound connections)
+public enum ServerTransportType: Sendable {
+  /// Standard input/output transport
   case stdio
+  /// HTTP server transport
   case http(HTTPTransportConfiguration)
+  /// WebSocket server transport
   case webSocket(WebSocketTransportConfiguration)
+}
+
+/// Client transport types (for outbound connections)
+public enum ClientTransportType: Sendable {
+  /// HTTP client transport (using URLSession)
+  case http(URLSessionHTTPClientConfiguration)
+  /// WebSocket client transport (using URLSession)
+  case webSocket(URLSessionWebSocketClientConfiguration)
+  /// Process transport (spawns a subprocess)
+  case process(command: String, arguments: [String])
 }
 
 /// Typealias for backward compatibility
 public typealias Bridge = Proxy
 
-/// Stream Bridge that forwards data between two transports
+/// Stream Bridge that forwards data between a server transport and a client transport
 public actor Proxy {
-  private let inbound: any Transport
-  private let outbound: any Transport
+  private let inbound: any ServerTransport
+  private let outbound: any ClientTransport
   private let logger: Logger?
 
   private var forwardTask: Task<Void, Never>?
@@ -36,10 +51,10 @@ public actor Proxy {
 
   /// Initialize a bridge with specific transport instances
   /// - Parameters:
-  ///   - inbound: Transport receiving incoming data (server mode)
-  ///   - outbound: Transport sending data to backend (client mode)
+  ///   - inbound: Server transport receiving incoming data
+  ///   - outbound: Client transport sending data to backend
   ///   - logger: Optional logger instance
-  public init(inbound: any Transport, outbound: any Transport, logger: Logger? = nil) {
+  public init(inbound: any ServerTransport, outbound: any ClientTransport, logger: Logger? = nil) {
     self.inbound = inbound
     self.outbound = outbound
     self.logger = logger
@@ -47,12 +62,16 @@ public actor Proxy {
 
   /// Initialize a bridge with transport types and configuration
   /// - Parameters:
-  ///   - inboundType: Type and configuration for inbound transport
-  ///   - outboundType: Type and configuration for outbound transport
+  ///   - inboundType: Server transport type for inbound connections
+  ///   - outboundType: Client transport type for outbound connections
   ///   - logger: Optional logger instance
-  public init(inboundType: TransportType, outboundType: TransportType, logger: Logger? = nil) {
-    self.inbound = Self.createTransport(type: inboundType, mode: .server, logger: logger)
-    self.outbound = Self.createTransport(type: outboundType, mode: .client, logger: logger)
+  public init(
+    inboundType: ServerTransportType,
+    outboundType: ClientTransportType,
+    logger: Logger? = nil
+  ) {
+    self.inbound = Self.createServerTransport(type: inboundType, logger: logger)
+    self.outbound = Self.createClientTransport(type: outboundType, logger: logger)
     self.logger = logger
   }
 
@@ -61,9 +80,8 @@ public actor Proxy {
   ///   - configuration: Bridge configuration
   ///   - logger: Optional logger instance
   public init(configuration: ProxyConfiguration, logger: Logger? = nil) {
-    self.inbound = Self.createTransport(type: configuration.inbound, mode: .server, logger: logger)
-    self.outbound = Self.createTransport(
-      type: configuration.outbound, mode: .client, logger: logger)
+    self.inbound = Self.createServerTransport(type: configuration.inbound, logger: logger)
+    self.outbound = Self.createClientTransport(type: configuration.outbound, logger: logger)
     self.logger = logger
   }
 
@@ -116,12 +134,12 @@ public actor Proxy {
 
   /// Bridge two transports and run until cancelled
   /// - Parameters:
-  ///   - source: Source transport
-  ///   - destination: Destination transport
+  ///   - source: Server transport (inbound)
+  ///   - destination: Client transport (outbound)
   ///   - logger: Optional logger
   public static func bridge(
-    from source: any Transport,
-    to destination: any Transport,
+    from source: any ServerTransport,
+    to destination: any ClientTransport,
     logger: Logger? = nil
   ) async throws {
     let proxy = Proxy(inbound: source, outbound: destination, logger: logger)
@@ -130,16 +148,29 @@ public actor Proxy {
 
   // MARK: - Private
 
-  private static func createTransport(type: TransportType, mode: TransportMode, logger: Logger?)
-    -> any Transport
+  private static func createServerTransport(type: ServerTransportType, logger: Logger?)
+    -> any ServerTransport
   {
     switch type {
     case .stdio:
-      return StdioTransport(mode: mode, logger: logger)
+      return StdioTransport(logger: logger)
     case .http(let config):
-      return HTTPTransport(mode: mode, config: config, logger: logger)
+      return HTTPTransport(config: config, logger: logger)
     case .webSocket(let config):
-      return WebSocketTransport(mode: mode, config: config, logger: logger)
+      return WebSocketTransport(config: config, logger: logger)
+    }
+  }
+
+  private static func createClientTransport(type: ClientTransportType, logger: Logger?)
+    -> any ClientTransport
+  {
+    switch type {
+    case .http(let config):
+      return URLSessionHTTPClientTransport(config: config, logger: logger)
+    case .webSocket(let config):
+      return URLSessionWebSocketClientTransport(config: config, logger: logger)
+    case .process(let command, let arguments):
+      return ProcessTransport(command: command, arguments: arguments, logger: logger)
     }
   }
 

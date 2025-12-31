@@ -4,8 +4,9 @@ import Logging
 import NIOCore
 import NIOHTTP1
 import NIOPosix
+import StreamTransportCore
 
-/// Configuration for HTTP transport
+/// Configuration for HTTP server transport
 public struct HTTPTransportConfiguration: Sendable {
   public let host: String
   public let port: Int
@@ -37,17 +38,16 @@ public struct HTTPTransportConfiguration: Sendable {
   }
 }
 
-/// Transport implementation using HTTP for streaming data
+/// HTTP server transport implementation using SwiftNIO
 ///
-/// In server mode, this transport provides two endpoints:
+/// This transport provides two endpoints:
 /// - `/in` (POST): Receives data from clients, forwarded to the `messages` stream
 /// - `/out` (GET): Streams outgoing data to clients using chunked transfer encoding
 ///
 /// This design aligns semantically with stdio:
 /// - `/in` ≈ stdin (clients write data to the server)
 /// - `/out` ≈ stdout (server streams data to clients)
-public actor HTTPTransport: Transport {
-  public let mode: TransportMode
+public actor HTTPTransport: ServerTransport {
   public private(set) var isRunning: Bool = false
 
   private let config: HTTPTransportConfiguration
@@ -55,13 +55,9 @@ public actor HTTPTransport: Transport {
   private var messagesContinuation: AsyncStream<Data>.Continuation?
   private var _messages: AsyncStream<Data>?
 
-  // Server mode
   private var eventLoopGroup: EventLoopGroup?
   private var serverChannel: Channel?
   private var outputHandler: HTTPServerOutputHandler?
-
-  // Client mode
-  private var httpClient: HTTPClient?
 
   public var messages: AsyncStream<Data> {
     if let existing = _messages {
@@ -73,17 +69,14 @@ public actor HTTPTransport: Transport {
     return stream
   }
 
-  /// Initialize an HTTP transport
+  /// Initialize an HTTP server transport
   /// - Parameters:
-  ///   - mode: .server creates an HTTP server, .client sends HTTP requests
   ///   - config: HTTP configuration (host, port, paths)
   ///   - logger: Optional logger instance
   public init(
-    mode: TransportMode,
     config: HTTPTransportConfiguration = HTTPTransportConfiguration(),
     logger: Logger? = nil
   ) {
-    self.mode = mode
     self.config = config
     self.logger = logger ?? Logger(label: "stream-bridge.http")
   }
@@ -94,14 +87,9 @@ public actor HTTPTransport: Transport {
     }
 
     isRunning = true
+    try await startServer()
 
-    if mode == .server {
-      try await startServer()
-    } else {
-      startClient()
-    }
-
-    logger.info("HTTPTransport started in \(mode) mode on \(config.host):\(config.port)")
+    logger.info("HTTPTransport started on \(config.host):\(config.port)")
   }
 
   public func stop() async throws {
@@ -109,17 +97,12 @@ public actor HTTPTransport: Transport {
 
     isRunning = false
 
-    if mode == .server {
-      outputHandler?.close()
-      try await serverChannel?.close()
-      try await eventLoopGroup?.shutdownGracefully()
-      serverChannel = nil
-      eventLoopGroup = nil
-      outputHandler = nil
-    } else {
-      try await httpClient?.shutdown()
-      httpClient = nil
-    }
+    outputHandler?.close()
+    try await serverChannel?.close()
+    try await eventLoopGroup?.shutdownGracefully()
+    serverChannel = nil
+    eventLoopGroup = nil
+    outputHandler = nil
 
     messagesContinuation?.finish()
     logger.info("HTTPTransport stopped")
@@ -130,16 +113,12 @@ public actor HTTPTransport: Transport {
       throw TransportError.notStarted
     }
 
-    if mode == .client {
-      try await sendHTTPRequest(data)
-    } else {
-      // In server mode, push data to connected /out clients
-      outputHandler?.send(data)
-      logger.debug("Queued \(data.count) bytes for /out streaming")
-    }
+    // Push data to connected /out clients
+    outputHandler?.send(data)
+    logger.debug("Queued \(data.count) bytes for /out streaming")
   }
 
-  // MARK: - Server Mode
+  // MARK: - Server Implementation
 
   private func startServer() async throws {
     _ = messages  // Initialize messages stream
@@ -182,33 +161,6 @@ public actor HTTPTransport: Transport {
   private func handleIncomingMessage(_ data: Data) {
     messagesContinuation?.yield(data)
     logger.debug("Received data on /in: \(data.count) bytes")
-  }
-
-  // MARK: - Client Mode
-
-  private func startClient() {
-    httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
-    _ = messages  // Initialize messages stream
-  }
-
-  private func sendHTTPRequest(_ data: Data) async throws {
-    guard let client = httpClient else {
-      throw TransportError.notStarted
-    }
-
-    var request = HTTPClientRequest(url: config.inURL.absoluteString)
-    request.method = .POST
-    request.headers.add(name: "Content-Type", value: "application/octet-stream")
-    request.body = .bytes(ByteBuffer(data: data))
-
-    let response = try await client.execute(request, timeout: .seconds(30))
-    let body = try await response.body.collect(upTo: 10 * 1024 * 1024)  // 10MB max
-    let responseData = Data(buffer: body)
-
-    if !responseData.isEmpty {
-      messagesContinuation?.yield(responseData)
-      logger.debug("Received HTTP response: \(responseData.count) bytes")
-    }
   }
 }
 

@@ -2,49 +2,62 @@ import Foundation
 import Testing
 
 @testable import StreamProxy
+@testable import StreamTransportClient
+@testable import StreamTransportServer
 
-@Suite("Transport Mode Tests")
-struct TransportModeTests {
-  @Test("Stdio transport initializes with correct mode")
-  func testStdioTransportMode() async {
-    let serverTransport = StdioTransport(mode: .server)
-    let clientTransport = StdioTransport(mode: .client)
-
-    let serverMode = await serverTransport.mode
-    let clientMode = await clientTransport.mode
-
-    #expect(serverMode == .server)
-    #expect(clientMode == .client)
+@Suite("Server Transport Tests")
+struct ServerTransportTests {
+  @Test("StdioTransport conforms to ServerTransport")
+  func testStdioTransportIsServer() async {
+    let transport = StdioTransport()
+    let isRunning = await transport.isRunning
+    #expect(isRunning == false)
   }
 
-  @Test("HTTP transport initializes with correct mode")
-  func testHTTPTransportMode() async {
-    let serverTransport = HTTPTransport(mode: .server)
-    let clientTransport = HTTPTransport(mode: .client)
-
-    let serverMode = await serverTransport.mode
-    let clientMode = await clientTransport.mode
-
-    #expect(serverMode == .server)
-    #expect(clientMode == .client)
+  @Test("HTTPTransport conforms to ServerTransport")
+  func testHTTPTransportIsServer() async {
+    let transport = HTTPTransport()
+    let isRunning = await transport.isRunning
+    #expect(isRunning == false)
   }
 
-  @Test("WebSocket transport initializes with correct mode")
-  func testWebSocketTransportMode() async {
-    let serverTransport = WebSocketTransport(mode: .server)
-    let clientTransport = WebSocketTransport(mode: .client)
-
-    let serverMode = await serverTransport.mode
-    let clientMode = await clientTransport.mode
-
-    #expect(serverMode == .server)
-    #expect(clientMode == .client)
+  @Test("WebSocketTransport conforms to ServerTransport")
+  func testWebSocketTransportIsServer() async {
+    let transport = WebSocketTransport()
+    let isRunning = await transport.isRunning
+    #expect(isRunning == false)
   }
+}
+
+@Suite("Client Transport Tests")
+struct ClientTransportTests {
+  @Test("URLSessionHTTPClientTransport conforms to ClientTransport")
+  func testHTTPClientTransportIsClient() async {
+    let transport = URLSessionHTTPClientTransport(host: "localhost", port: 8080)
+    let isRunning = await transport.isRunning
+    #expect(isRunning == false)
+  }
+
+  @Test("URLSessionWebSocketClientTransport conforms to ClientTransport")
+  func testWebSocketClientTransportIsClient() async {
+    let transport = URLSessionWebSocketClientTransport(host: "localhost", port: 8080)
+    let isRunning = await transport.isRunning
+    #expect(isRunning == false)
+  }
+
+  #if os(macOS) || os(Linux)
+    @Test("ProcessTransport conforms to ClientTransport")
+    func testProcessTransportIsClient() async {
+      let transport = ProcessTransport(command: "echo", arguments: ["hello"])
+      let isRunning = await transport.isRunning
+      #expect(isRunning == false)
+    }
+  #endif
 }
 
 @Suite("Configuration Tests")
 struct ConfigurationTests {
-  @Test("HTTP configuration creates correct URL")
+  @Test("HTTP server configuration creates correct URL")
   func testHTTPConfigURL() {
     let config = HTTPTransportConfiguration(
       host: "localhost", port: 8080, inPath: "/in", outPath: "/out")
@@ -53,24 +66,24 @@ struct ConfigurationTests {
     #expect(config.outURL.absoluteString == "http://localhost:8080/out")
   }
 
-  @Test("WebSocket configuration creates correct URL")
+  @Test("WebSocket server configuration creates correct URL")
   func testWebSocketConfigURL() {
     let config = WebSocketTransportConfiguration(
       host: "localhost", port: 9000, path: "/ws", useTLS: false)
     #expect(config.url.absoluteString == "ws://localhost:9000/ws")
   }
 
-  @Test("WebSocket configuration with TLS creates correct URL")
+  @Test("WebSocket server configuration with TLS creates correct URL")
   func testWebSocketConfigTLSURL() {
     let config = WebSocketTransportConfiguration(
       host: "example.com", port: 443, path: "/ws", useTLS: true)
     #expect(config.url.absoluteString == "wss://example.com:443/ws")
   }
 
-  @Test("TransportType factory methods")
-  func testTransportTypeFactoryMethods() {
-    let httpType = TransportType.http(host: "localhost", port: 3000)
-    let wsType = TransportType.webSocket(host: "localhost", port: 8080, path: "/ws", useTLS: true)
+  @Test("ServerTransportType factory methods")
+  func testServerTransportTypeFactoryMethods() {
+    let httpType = ServerTransportType.http(host: "localhost", port: 3000)
+    let wsType = ServerTransportType.webSocket(host: "localhost", port: 8080, path: "/ws")
 
     if case .http(let config) = httpType {
       #expect(config.host == "localhost")
@@ -85,9 +98,27 @@ struct ConfigurationTests {
       #expect(config.host == "localhost")
       #expect(config.port == 8080)
       #expect(config.path == "/ws")
-      #expect(config.useTLS == true)
     } else {
       Issue.record("Expected WebSocket transport type")
+    }
+  }
+
+  @Test("ClientTransportType factory methods")
+  func testClientTransportTypeFactoryMethods() {
+    let httpType = ClientTransportType.http(host: "localhost", port: 3000)
+    let wsType = ClientTransportType.webSocket(
+      host: "localhost", port: 8080, path: "/ws", useTLS: true)
+
+    if case .http(let config) = httpType {
+      #expect(config.baseURL.host == "localhost")
+    } else {
+      Issue.record("Expected HTTP client transport type")
+    }
+
+    if case .webSocket(let config) = wsType {
+      #expect(config.url.host == "localhost")
+    } else {
+      Issue.record("Expected WebSocket client transport type")
     }
   }
 }

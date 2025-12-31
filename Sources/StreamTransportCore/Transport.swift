@@ -2,14 +2,6 @@ import Foundation
 
 // MARK: - Transport Protocol
 
-/// Defines the mode in which a transport operates
-public enum TransportMode: Sendable {
-  /// Server mode: listens for incoming connections/data
-  case server
-  /// Client mode: connects to a remote endpoint
-  case client
-}
-
 /// Errors that can occur during transport operations
 public enum TransportError: Error, Sendable {
   case notStarted
@@ -21,11 +13,8 @@ public enum TransportError: Error, Sendable {
   case closed
 }
 
-/// Protocol defining a transport mechanism for streaming data
+/// Base protocol defining a transport mechanism for streaming data
 public protocol Transport: Actor {
-  /// The mode this transport is operating in
-  var mode: TransportMode { get }
-
   /// Whether the transport is currently running
   var isRunning: Bool { get }
 
@@ -41,3 +30,19 @@ public protocol Transport: Actor {
   /// Stream of incoming data
   var messages: AsyncStream<Data> { get }
 }
+
+// MARK: - Server Transport
+
+/// A transport that listens for and accepts incoming connections/data
+///
+/// Server transports are used as the inbound side of a proxy, receiving
+/// data from external clients.
+public protocol ServerTransport: Transport {}
+
+// MARK: - Client Transport
+
+/// A transport that connects to a remote endpoint
+///
+/// Client transports are used as the outbound side of a proxy, sending
+/// data to backend services.
+public protocol ClientTransport: Transport {}

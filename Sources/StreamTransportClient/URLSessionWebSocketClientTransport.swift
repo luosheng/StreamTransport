@@ -29,8 +29,7 @@ public struct URLSessionWebSocketClientConfiguration: Sendable {
 ///
 /// This transport connects to a WebSocket server and provides
 /// bidirectional streaming communication.
-public actor URLSessionWebSocketClientTransport: Transport {
-  public let mode: TransportMode = .client
+public actor URLSessionWebSocketClientTransport: ClientTransport {
   public private(set) var isRunning: Bool = false
 
   private let config: URLSessionWebSocketClientConfiguration

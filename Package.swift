@@ -80,7 +80,7 @@ let package = Package(
     // MARK: - Proxy (macOS/Linux only)
     .target(
       name: "StreamProxy",
-      dependencies: ["StreamTransportServer"]
+      dependencies: ["StreamTransportServer", "StreamTransportClient"]
     ),
 
     // MARK: - Example Executable (macOS only)

@@ -4,9 +4,10 @@ import NIOCore
 import NIOHTTP1
 import NIOPosix
 import NIOWebSocket
+import StreamTransportCore
 import WebSocketKit
 
-/// Configuration for WebSocket transport
+/// Configuration for WebSocket server transport
 public struct WebSocketTransportConfiguration: Sendable {
   public let host: String
   public let port: Int
@@ -28,9 +29,11 @@ public struct WebSocketTransportConfiguration: Sendable {
   }
 }
 
-/// Transport implementation using WebSocket for streaming data
-public actor WebSocketTransport: Transport {
-  public let mode: TransportMode
+/// WebSocket server transport implementation using SwiftNIO
+///
+/// This transport creates a WebSocket server that accepts incoming connections
+/// and provides bidirectional streaming communication.
+public actor WebSocketTransport: ServerTransport {
   public private(set) var isRunning: Bool = false
 
   private let config: WebSocketTransportConfiguration
@@ -38,14 +41,9 @@ public actor WebSocketTransport: Transport {
   private var messagesContinuation: AsyncStream<Data>.Continuation?
   private var _messages: AsyncStream<Data>?
 
-  // Server mode
   private var eventLoopGroup: EventLoopGroup?
   private var serverChannel: Channel?
   private var connectedClients: [WebSocket] = []
-
-  // Client mode
-  private var clientWebSocket: WebSocket?
-  private var clientEventLoopGroup: EventLoopGroup?
 
   public var messages: AsyncStream<Data> {
     if let existing = _messages {
@@ -57,17 +55,14 @@ public actor WebSocketTransport: Transport {
     return stream
   }
 
-  /// Initialize a WebSocket transport
+  /// Initialize a WebSocket server transport
   /// - Parameters:
-  ///   - mode: .server creates a WebSocket server, .client connects to a WebSocket server
   ///   - config: WebSocket configuration
   ///   - logger: Optional logger instance
   public init(
-    mode: TransportMode,
     config: WebSocketTransportConfiguration = WebSocketTransportConfiguration(),
     logger: Logger? = nil
   ) {
-    self.mode = mode
     self.config = config
     self.logger = logger ?? Logger(label: "stream-bridge.websocket")
   }
@@ -80,13 +75,9 @@ public actor WebSocketTransport: Transport {
     isRunning = true
     _ = messages  // Initialize messages stream
 
-    if mode == .server {
-      try await startServer()
-    } else {
-      try await startClient()
-    }
+    try await startServer()
 
-    logger.info("WebSocketTransport started in \(mode) mode on \(config.host):\(config.port)")
+    logger.info("WebSocketTransport started on \(config.host):\(config.port)")
   }
 
   public func stop() async throws {
@@ -94,21 +85,14 @@ public actor WebSocketTransport: Transport {
 
     isRunning = false
 
-    if mode == .server {
-      for client in connectedClients {
-        try await client.close()
-      }
-      connectedClients.removeAll()
-      try await serverChannel?.close()
-      try await eventLoopGroup?.shutdownGracefully()
-      serverChannel = nil
-      eventLoopGroup = nil
-    } else {
-      try await clientWebSocket?.close()
-      try await clientEventLoopGroup?.shutdownGracefully()
-      clientWebSocket = nil
-      clientEventLoopGroup = nil
+    for client in connectedClients {
+      try await client.close()
     }
+    connectedClients.removeAll()
+    try await serverChannel?.close()
+    try await eventLoopGroup?.shutdownGracefully()
+    serverChannel = nil
+    eventLoopGroup = nil
 
     messagesContinuation?.finish()
     logger.info("WebSocketTransport stopped")
@@ -119,30 +103,20 @@ public actor WebSocketTransport: Transport {
       throw TransportError.notStarted
     }
 
-    if mode == .client {
-      guard let ws = clientWebSocket else {
-        throw TransportError.notStarted
-      }
-      try await ws.send(Array(data))
-    } else {
-      // Server mode: broadcast to all connected clients
-      for client in connectedClients {
-        try await client.send(Array(data))
-      }
+    // Broadcast to all connected clients
+    for client in connectedClients {
+      try await client.send(Array(data))
     }
 
-    logger.debug("Sent \(data.count) bytes via WebSocket")
+    logger.debug("Sent \(data.count) bytes via WebSocket to \(connectedClients.count) clients")
   }
 
-  /// Send to a specific client (server mode only)
+  /// Send to a specific client
   public func send(_ data: Data, to client: WebSocket) async throws {
-    guard mode == .server else {
-      throw TransportError.sendFailed("send(to:) is only available in server mode")
-    }
     try await client.send(Array(data))
   }
 
-  // MARK: - Server Mode
+  // MARK: - Server Implementation
 
   private func startServer() async throws {
     let group = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
@@ -215,62 +189,6 @@ public actor WebSocketTransport: Transport {
     connectedClients.removeAll { $0 === ws }
     logger.info("WebSocket client disconnected. Total clients: \(connectedClients.count)")
   }
-
-  // MARK: - Client Mode
-
-  private func startClient() async throws {
-    let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-    self.clientEventLoopGroup = group
-
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      WebSocket.connect(to: config.url.absoluteString, on: group) { [weak self] ws in
-        guard let self else {
-          continuation.resume()
-          return
-        }
-        Task {
-          await self.handleClientConnection(ws)
-          continuation.resume()
-        }
-      }.whenFailure { error in
-        continuation.resume(throwing: error)
-      }
-    }
-  }
-
-  private func handleClientConnection(_ ws: WebSocket) {
-    self.clientWebSocket = ws
-
-    ws.onBinary { [weak self] _, buffer in
-      guard let self else { return }
-      let data = Data(buffer.readableBytesView)
-      Task {
-        await self.handleIncomingMessage(data)
-      }
-    }
-
-    ws.onText { [weak self] _, text in
-      guard let self else { return }
-      let data = Data(text.utf8)
-      Task {
-        await self.handleIncomingMessage(data)
-      }
-    }
-
-    ws.onClose.whenComplete { [weak self] _ in
-      guard let self else { return }
-      Task {
-        await self.handleClientDisconnection()
-      }
-    }
-  }
-
-  private func handleClientDisconnection() {
-    clientWebSocket = nil
-    logger.info("WebSocket client disconnected from server")
-  }
-
-  // MARK: - Common
 
   private func handleIncomingMessage(_ data: Data) {
     messagesContinuation?.yield(data)

@@ -1,9 +1,12 @@
 import Foundation
 import Logging
+import StreamTransportCore
 
 /// Transport implementation using stdin/stdout for streaming data
-public actor StdioTransport: Transport {
-  public let mode: TransportMode
+///
+/// This transport reads from stdin and writes to stdout, making it suitable
+/// for command-line tools that communicate via standard streams.
+public actor StdioTransport: ServerTransport {
   public private(set) var isRunning: Bool = false
 
   private let logger: Logger?
@@ -22,9 +25,8 @@ public actor StdioTransport: Transport {
   }
 
   /// Initialize a stdio transport
-  /// - Parameter mode: .server reads from stdin, .client writes to stdout
-  public init(mode: TransportMode = .server, logger: Logger? = nil) {
-    self.mode = mode
+  /// - Parameter logger: Optional logger instance
+  public init(logger: Logger? = nil) {
     self.logger = logger
   }
 
@@ -34,13 +36,11 @@ public actor StdioTransport: Transport {
     }
 
     isRunning = true
-    logger?.info("StdioTransport started in \(mode) mode")
+    logger?.info("StdioTransport started")
 
-    if mode == .server {
-      // Initialize the messages stream if not already done
-      _ = messages
-      startReading()
-    }
+    // Initialize the messages stream if not already done
+    _ = messages
+    startReading()
   }
 
   public func stop() async throws {
