@@ -1,4 +1,4 @@
-# StreamBridge
+# StreamTransport
 
 A Swift package for bridging between different transport mechanisms. Stream data transparently between stdio, HTTP, WebSocket, and subprocess transports.
 
@@ -17,7 +17,7 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/example/StreamBridge", from: "1.0.0")
+    .package(url: "https://github.com/example/StreamTransport", from: "1.0.0")
 ]
 ```
 
@@ -26,7 +26,7 @@ dependencies: [
 ### Simple Stdio-to-Process Bridge
 
 ```swift
-import StreamBridge
+import StreamTransport
 
 let inbound = StdioTransport(mode: .server)
 let outbound = ProcessTransport(command: "opencode", arguments: ["acp"])
@@ -37,7 +37,7 @@ try await bridge.run()
 ### HTTP to WebSocket Bridge
 
 ```swift
-import StreamBridge
+import StreamTransport
 
 let bridge = Proxy(
     inboundType: .http(host: "0.0.0.0", port: 3000, path: "/"),
@@ -49,7 +49,7 @@ try await bridge.run()
 ### WebSocket to Stdio Bridge
 
 ```swift
-import StreamBridge
+import StreamTransport
 
 // Wrap a CLI tool with a WebSocket interface
 let bridge = Proxy(

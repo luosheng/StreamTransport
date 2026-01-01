@@ -4,7 +4,7 @@
 import PackageDescription
 
 let package = Package(
-  name: "StreamBridge",
+  name: "StreamTransport",
   platforms: [
     .macOS(.v14),
     .iOS(.v17),
@@ -91,7 +91,7 @@ let package = Package(
 
     // MARK: - Tests
     .testTarget(
-      name: "StreamBridgeTests",
+      name: "StreamTransportTests",
       dependencies: ["StreamProxy"]
     ),
   ]
